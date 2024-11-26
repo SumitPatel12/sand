@@ -16,6 +16,7 @@ impl fmt::Display for DBErrors {
     }
 }
 
+#[derive(Debug)]
 pub enum TextEncoding {
     UTF8,
     UTF16le,
@@ -23,6 +24,7 @@ pub enum TextEncoding {
 }
 
 // 100 byte DB header for the SQLite file.
+#[derive(Debug)]
 pub struct DBHeader {
     // Always: 53 51 4c 69 74 65 20 66 6f 72 6d 61 74 20 33 00 which is "SQLite format 3"
     pub header_string: [u8; 16],
@@ -83,13 +85,13 @@ impl DBHeader {
         offset += 2;
 
         // Helper closure to extract values
-        let mut get_u8 = |buf: &[u8], offset: &mut usize| -> u8 {
+        let get_u8 = |buf: &[u8], offset: &mut usize| -> u8 {
             let val = buf[*offset];
             *offset += 1;
             val
         };
 
-        let mut get_u32 = |buf: &[u8], offset: &mut usize| -> u32 {
+        let get_u32 = |buf: &[u8], offset: &mut usize| -> u32 {
             let val = u32::from_be_bytes(buf[*offset..*offset + 4].try_into().unwrap());
             *offset += 4;
             val
