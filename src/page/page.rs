@@ -1,4 +1,10 @@
-use super::dbfileheader::DBHeader;
+use super::{dbfileheader::DBHeader, errors::DBErrors};
+
+pub const PAGE_HEADER_FIRST_FREEBLOCK_OFFSET: u8 = 1;
+pub const PAGE_HEADER_CELL_COUNT_OFFSET: u16 = 3;
+pub const PAGE_HEADER_CELL_CONTENT_AREA_START_OFFSET: u16 = 5;
+pub const PAGE_HEADER_FRAGMENTED_BYTES_COUNT_OFFSET: u16 = 7;
+pub const PAGE_HEADER_RIGHT_MOST_POINTER_OFFSET: u32 = 8;
 
 #[derive(Debug)]
 pub enum Page {
