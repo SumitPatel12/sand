@@ -3,6 +3,7 @@ use super::{
     errors::DBErrors,
     page::Page,
 };
+use std::convert::TryInto;
 
 // File header parser
 pub const HEADER_SIZE_BYTES: usize = 100;
@@ -117,12 +118,12 @@ fn raise_error(msg: String) -> Result<DBHeader, DBErrors> {
 }
 
 // Page Parser
-pub fn parse_page(buffer: &[u8], page_number: u32) -> Result<Page, DBErrors> {
-    let cursor = 0;
-    if page_number == 1 {
-        let file_header = parse_file_header(buffer);
-        cursor += 100;
-    }
+//pub fn parse_page(buffer: &[u8], page_number: u32) -> Result<Page, DBErrors> {
+//let cursor = 0;
+//if page_number == 1 {
+//let file_header = parse_file_header(buffer);
+//cursor += 100;
+//}
 
-    Ok(Page)
-}
+//Ok(Page)
+//}

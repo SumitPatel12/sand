@@ -1,4 +1,4 @@
-mod dbfileheader;
-mod errors;
-mod page;
-mod page_parser;
+pub mod dbfileheader;
+pub mod errors;
+pub mod page;
+pub mod page_parser;

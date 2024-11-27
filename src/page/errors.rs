@@ -1,5 +1,5 @@
-use core::fmt::{self, Formatter, Result};
 use std::error::Error;
+use std::fmt::{self, Formatter, Result};
 
 #[derive(Debug)]
 pub enum DBErrors {
