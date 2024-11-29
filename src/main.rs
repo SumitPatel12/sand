@@ -10,8 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     file.read_exact(&mut buffer)?;
 
     let file_header = page::page_parser::parse_file_header(&buffer)?;
+    println!("{:#?}", file_header);
 
-    print!("{:#?}", file_header);
+    let page_header = page::page_parser::parse_page_header(&mut file);
+    println!("{:#?}", page_header);
 
     Ok(())
 }

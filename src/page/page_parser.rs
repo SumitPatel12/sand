@@ -1,25 +1,48 @@
 use super::{
     dbfileheader::{DBHeader, TextEncoding},
     errors::DBErrors,
-    page::Page,
+    page::{
+        InteriorPageHeader, LeafPageHeader, PageHeader, PageType, INTERIOR_PAGE_HEADER_SIZE,
+        LEAF_PAGE_HEADER_SIZE,
+    },
 };
-use std::convert::TryInto;
+use std::{convert::TryInto, fs::File, io::Read};
 
 // File header parser
 pub const HEADER_SIZE_BYTES: usize = 100;
 const HEADER_STRING: &'static [u8; 16] = b"SQLite format 3\0";
-const HEADER_PAGE_SIZE_OFFSET: usize = 16;
 const MAX_PAGE_SIZE: u32 = 65536;
 // The static offsets taken from the SQLite documentation
 const HEADER_OFFSETS: [usize; 23] = [
     0, 16, 18, 19, 20, 21, 22, 23, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 92, 96,
 ];
 
+fn get_u8(buffer: &[u8], offset: &mut usize) -> u8 {
+    let val = buffer[*offset];
+    *offset += 1;
+    val
+}
+
+fn get_u16(buffer: &[u8], offset: &mut usize) -> u16 {
+    let val = u16::from_be_bytes(buffer[*offset..*offset + 2].try_into().unwrap());
+    *offset += 2;
+    val
+}
+
+fn get_u32(buffer: &[u8], offset: &mut usize) -> u32 {
+    let val = u32::from_be_bytes(buffer[*offset..*offset + 4].try_into().unwrap());
+    *offset += 4;
+    val
+}
+
 pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBErrors> {
-    let mut header_string = String::new();
+    let header_string;
     if !buffer.starts_with(HEADER_STRING) {
         header_string = String::from_utf8_lossy(&buffer[..HEADER_STRING.len()]).to_string();
-        raise_error(header_string);
+        return Err(DBErrors::InvalidFileHeader(format!(
+            "Invalid Header String: {}",
+            header_string
+        )));
     }
 
     let mut offset = 16; // Start after HEADER_STRING
@@ -29,22 +52,12 @@ pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBErrors> {
         page_size_bytes => page_size_bytes as u32,
     };
     if !page_size.is_power_of_two() {
-        raise_error(format!("Page size is not power of 2: {}", page_size));
+        return Err(DBErrors::InvalidFileHeader(format!(
+            "Page size is not a multiple of 2: {}",
+            page_size
+        )));
     }
     offset += 2;
-
-    // Helper closure to extract values
-    let get_u8 = |buf: &[u8], offset: &mut usize| -> u8 {
-        let val = buf[*offset];
-        *offset += 1;
-        val
-    };
-
-    let get_u32 = |buf: &[u8], offset: &mut usize| -> u32 {
-        let val = u32::from_be_bytes(buf[*offset..*offset + 4].try_into().unwrap());
-        *offset += 4;
-        val
-    };
 
     // Extract remaining fields
     let write_version = get_u8(buffer, &mut offset);
@@ -63,7 +76,10 @@ pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBErrors> {
 
     let text_encoding_byte = get_u32(buffer, &mut offset);
     if text_encoding_byte != 1 && text_encoding_byte != 2 && text_encoding_byte != 3 {
-        return raise_error(format!("Invalid Text Encoding {}", text_encoding_byte));
+        return Err(DBErrors::InvalidFileHeader(format!(
+            "Invalid Text encoding: {}",
+            text_encoding_byte
+        )));
     }
     let text_encoding = match text_encoding_byte {
         1 => TextEncoding::UTF8,
@@ -110,11 +126,65 @@ pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBErrors> {
     })
 }
 
-fn raise_error(msg: String) -> Result<DBHeader, DBErrors> {
-    Err(DBErrors::InvalidFileHeader(format!(
-        "Invalid Header String: {}",
-        msg
-    )))
+pub fn parse_page_header(file: &mut File) -> Result<PageHeader, DBErrors> {
+    let mut offset = 0;
+    let mut page_type_buffer = [0u8; 1];
+    let mut is_interior_page = false;
+    let _ = file.read_exact(&mut page_type_buffer);
+
+    let page_type = match page_type_buffer[0] {
+        2 => {
+            is_interior_page = true;
+            PageType::IndexInterior
+        }
+        5 => {
+            is_interior_page = true;
+            PageType::TableInterior
+        }
+        10 => PageType::IndexLeaf,
+        13 => PageType::TableLeaf,
+        n => {
+            return Err(DBErrors::InvalidPageHeader(format!(
+                "Invalid Page Type: {}",
+                n
+            )))
+        }
+    };
+
+    let mut buffer = vec![
+        0u8;
+        if is_interior_page {
+            INTERIOR_PAGE_HEADER_SIZE - 1
+        } else {
+            LEAF_PAGE_HEADER_SIZE - 1
+        }
+    ];
+    let _ = file.read_exact(&mut buffer);
+
+    let first_freeblock = get_u16(&buffer, &mut offset);
+    let cell_count = get_u16(&buffer, &mut offset);
+    let cell_content_offset = get_u16(&buffer, &mut offset);
+    let fragmented_bytes_count = get_u8(&buffer, &mut offset);
+
+    if is_interior_page {
+        let right_most_pointer = get_u32(&buffer, &mut offset);
+        return Ok(PageHeader::InteriorPageHeader(InteriorPageHeader {
+            page_type,
+            first_freeblock,
+            cell_count,
+            cell_content_offset,
+            fragmented_bytes_count,
+            right_most_pointer,
+        }));
+    }
+
+    Ok(PageHeader::LeafPageHeader(LeafPageHeader {
+        page_type,
+        first_freeblock,
+        cell_count,
+        cell_content_offset,
+        fragmented_bytes_count,
+    }))
 }
 
 // Page Parser

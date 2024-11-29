@@ -1,7 +1,3 @@
-use std::usize;
-
-use super::errors::DBErrors;
-
 #[derive(Debug)]
 pub enum TextEncoding {
     UTF8,

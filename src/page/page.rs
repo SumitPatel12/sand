@@ -1,10 +1,12 @@
-use super::{dbfileheader::DBHeader, errors::DBErrors};
+use super::dbfileheader::DBHeader;
 
 pub const PAGE_HEADER_FIRST_FREEBLOCK_OFFSET: u8 = 1;
 pub const PAGE_HEADER_CELL_COUNT_OFFSET: u16 = 3;
 pub const PAGE_HEADER_CELL_CONTENT_AREA_START_OFFSET: u16 = 5;
 pub const PAGE_HEADER_FRAGMENTED_BYTES_COUNT_OFFSET: u16 = 7;
 pub const PAGE_HEADER_RIGHT_MOST_POINTER_OFFSET: u32 = 8;
+pub const LEAF_PAGE_HEADER_SIZE: usize = 8;
+pub const INTERIOR_PAGE_HEADER_SIZE: usize = 12;
 
 #[derive(Debug)]
 pub enum Page {
@@ -28,28 +30,26 @@ pub struct TableLeafPage {
 
 #[derive(Debug, Copy, Clone)]
 pub enum PageHeader {
-    TableLeafHeader(TableLeafPageHeader),
-    TableInteriorHeader,
-    IndexLeafHeader,
-    IndexInteriorHeader,
+    LeafPageHeader(LeafPageHeader),
+    InteriorPageHeader(InteriorPageHeader),
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct TableLeafPageHeader {
+pub struct LeafPageHeader {
     pub page_type: PageType,
     pub first_freeblock: u16,
     pub cell_count: u16,
     pub cell_content_offset: u16,
-    pub fragmented_bytes_coutn: u8,
+    pub fragmented_bytes_count: u8,
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct TableInteriorPageHeader {
+pub struct InteriorPageHeader {
     pub page_type: PageType,
     pub first_freeblock: u16,
     pub cell_count: u16,
     pub cell_content_offset: u16,
-    pub fragmented_bytes_coutn: u8,
+    pub fragmented_bytes_count: u8,
     pub right_most_pointer: u32,
 }
 
