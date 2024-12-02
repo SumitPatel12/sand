@@ -62,29 +62,37 @@ pub enum PageType {
 }
 
 #[derive(Debug, Clone)]
+pub enum PageCell {
+    TableLeafCell(TableLeafCell),
+    TableInteriorCell(TableInteriorCell),
+    IndexLeafCell(IndexLeafCell),
+    IndexInteriorCell(IndexInteriorCell),
+}
+
+#[derive(Debug, Clone)]
 pub struct TableLeafCell {
-    pub size: i64,
-    pub row_id: i64,
+    pub payload_size: u64,
+    pub row_id: u64,
     pub payload: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TableInteriorCell {
-    pub left_child_pointer: i64,
-    pub row_id: i64,
+    pub left_child_pointer: u64,
+    pub row_id: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct IndexLeafCell {
-    pub size_including_overflow: i64,
+    pub size_including_overflow: u64,
     pub payload: Vec<u8>,
     pub overflow_page_offset: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct IndexInteriorCell {
-    pub left_child_pointer: i64,
-    pub size_including_overflow: i64,
+    pub left_child_pointer: u64,
+    pub size_including_overflow: u64,
     pub payload: Vec<u8>,
     pub overflow_page_offset: u32,
 }
