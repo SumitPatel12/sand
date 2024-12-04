@@ -1,66 +1,123 @@
+// TODO: Typecasting in this project is ugly. Look into better things.
 use super::{
     dbfileheader::{DBHeader, TextEncoding},
     errors::DBError,
     page::{InteriorPageHeader, LeafPageHeader, PageCell, PageHeader, PageType, TableLeafCell},
     varint::get_varint,
+    SQLiteSchema,
 };
-use std::convert::TryInto;
 use std::str;
+use std::{convert::TryInto, fs::File};
+use std::{
+    io::{Read, Seek},
+    u16,
+};
 
 // File header parser
 pub const HEADER_SIZE_BYTES: usize = 100;
 const HEADER_STRING: &'static [u8; 16] = b"SQLite format 3\0";
 const MAX_PAGE_SIZE: u32 = 65536;
 
-fn get_i8(buffer: &[u8], offset: &mut usize) -> i8 {
+// TODO: Create a wrapper for all these methods and the buffer and pass that wrapper around maybe.
+fn read_i8(buffer: &[u8], offset: &mut usize) -> i8 {
     let val = buffer[*offset] as i8;
     *offset += 1;
     val
 }
 
-fn get_i16(buffer: &[u8], offset: &mut usize) -> i16 {
+fn read_i16(buffer: &[u8], offset: &mut usize) -> i16 {
     let val = i16::from_be_bytes(buffer[*offset..*offset + 2].try_into().unwrap());
     *offset += 2;
     val
 }
 
-fn get_i32(buffer: &[u8], offset: &mut usize) -> i32 {
+fn read_i32(buffer: &[u8], offset: &mut usize) -> i32 {
     let val = i32::from_be_bytes(buffer[*offset..*offset + 4].try_into().unwrap());
     *offset += 4;
     val
 }
 
-fn get_i64(buffer: &[u8], offset: &mut usize) -> i64 {
+fn read_i64(buffer: &[u8], offset: &mut usize) -> i64 {
     let val = i64::from_be_bytes(buffer[*offset..*offset + 8].try_into().unwrap());
     *offset += 8;
     val
 }
 
-fn get_f64(buffer: &[u8], offset: &mut usize) -> f64 {
+fn read_f64(buffer: &[u8], offset: &mut usize) -> f64 {
     let val = f64::from_be_bytes(buffer[*offset..*offset + 8].try_into().unwrap());
     *offset += 8;
     val
 }
 
-fn get_u8(buffer: &[u8], offset: &mut usize) -> u8 {
+fn read_u8(buffer: &[u8], offset: &mut usize) -> u8 {
     let val = buffer[*offset];
     *offset += 1;
     val
 }
 
-fn get_u16(buffer: &[u8], offset: &mut usize) -> u16 {
+fn read_u16(buffer: &[u8], offset: &mut usize) -> u16 {
     let val = u16::from_be_bytes(buffer[*offset..*offset + 2].try_into().unwrap());
     *offset += 2;
     val
 }
 
-fn get_u32(buffer: &[u8], offset: &mut usize) -> u32 {
+fn read_u32(buffer: &[u8], offset: &mut usize) -> u32 {
     let val = u32::from_be_bytes(buffer[*offset..*offset + 4].try_into().unwrap());
     *offset += 4;
     val
 }
 
-pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBError> {
+// TODO: Create a wrapper for the parer methods and have the page size as a constant.
+pub fn parse_file() -> Result<(), Box<dyn std::error::Error>> {
+    let db_file_path = "../sand.db";
+    let mut file = File::open(db_file_path)?;
+    let (page_size, tables) = parse_schema_page(&mut file)?;
+
+    for table in tables {
+        println!("Table: {:#?}", table);
+        parse_page(&mut file, table.root_page as u64, page_size)?;
+    }
+
+    Ok(())
+}
+
+// TODO: I know code duplication and what not but I need to get something working before worrying about
+// all of that.
+pub fn parse_schema_page(
+    file: &mut File,
+) -> Result<(u32, Vec<SQLiteSchema>), Box<dyn std::error::Error>> {
+    let mut buffer = [0u8; 100];
+    let mut offset = 100;
+
+    file.read_exact(&mut buffer)?;
+
+    let file_header = parse_db_file_header(&buffer)?;
+    println!("{:#?}", file_header);
+
+    let mut page_buffer = vec![0u8; file_header.page_size as usize];
+    file.seek(std::io::SeekFrom::Start(0))?;
+    file.read_exact(&mut page_buffer)?;
+
+    let page_header = parse_page_header(&page_buffer, &mut offset)?;
+    println!("{:#?}", page_header);
+
+    // TODO: Maybe check if we actually have a payload before intializing this.
+    let mut tables: Vec<SQLiteSchema> = Vec::new();
+
+    for cell_offset in get_cell_pointers(&page_buffer, &mut offset, page_header) {
+        offset = cell_offset as usize;
+        let payload_size = get_varint(&page_buffer, &mut offset);
+        let row_id = get_varint(&page_buffer, &mut offset);
+
+        println!("Payload: {}, Row Id: {}", payload_size, row_id);
+        // TODO: This only works for leaf nodes better get this sorted out as well.
+        tables.push(read_sqlite_schema_cell_payload(&page_buffer, &mut offset)?);
+    }
+
+    Ok((file_header.page_size, tables))
+}
+
+pub fn parse_db_file_header(buffer: &[u8]) -> Result<DBHeader, DBError> {
     let header_string;
     if !buffer.starts_with(HEADER_STRING) {
         header_string = String::from_utf8_lossy(&buffer[..HEADER_STRING.len()]).to_string();
@@ -85,22 +142,22 @@ pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBError> {
     offset += 2;
 
     // Extract remaining fields
-    let write_version = get_u8(buffer, &mut offset);
-    let read_version = get_u8(buffer, &mut offset);
-    let reserved_space_size = get_u8(buffer, &mut offset);
-    let max_payload_fraction = get_u8(buffer, &mut offset);
-    let min_payload_fraction = get_u8(buffer, &mut offset);
-    let leaf_payload_fraction = get_u8(buffer, &mut offset);
-    let file_change_counter = get_u32(buffer, &mut offset);
-    let database_size_pages = get_u32(buffer, &mut offset);
-    let first_freelist_trunk_page = get_u32(buffer, &mut offset);
-    let number_of_freelist_pages = get_u32(buffer, &mut offset);
-    let schema_cookie = get_u32(buffer, &mut offset);
-    let schema_format = get_u32(buffer, &mut offset);
-    let default_page_cache_size = get_u32(buffer, &mut offset);
-    let largest_btree_root_page = get_u32(buffer, &mut offset);
+    let write_version = read_u8(buffer, &mut offset);
+    let read_version = read_u8(buffer, &mut offset);
+    let reserved_space_size = read_u8(buffer, &mut offset);
+    let max_payload_fraction = read_u8(buffer, &mut offset);
+    let min_payload_fraction = read_u8(buffer, &mut offset);
+    let leaf_payload_fraction = read_u8(buffer, &mut offset);
+    let file_change_counter = read_u32(buffer, &mut offset);
+    let database_size_pages = read_u32(buffer, &mut offset);
+    let first_freelist_trunk_page = read_u32(buffer, &mut offset);
+    let number_of_freelist_pages = read_u32(buffer, &mut offset);
+    let schema_cookie = read_u32(buffer, &mut offset);
+    let schema_format = read_u32(buffer, &mut offset);
+    let default_page_cache_size = read_u32(buffer, &mut offset);
+    let largest_btree_root_page = read_u32(buffer, &mut offset);
 
-    let text_encoding_byte = get_u32(buffer, &mut offset);
+    let text_encoding_byte = read_u32(buffer, &mut offset);
     if text_encoding_byte != 1 && text_encoding_byte != 2 && text_encoding_byte != 3 {
         return Err(DBError::InvalidFileHeader(format!(
             "Invalid Text encoding: {}",
@@ -114,15 +171,15 @@ pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBError> {
         _ => unreachable!(),
     };
 
-    let user_version = get_u32(buffer, &mut offset);
-    let incremental_vacuum_mode = get_u32(buffer, &mut offset);
-    let application_id = get_u32(buffer, &mut offset);
+    let user_version = read_u32(buffer, &mut offset);
+    let incremental_vacuum_mode = read_u32(buffer, &mut offset);
+    let application_id = read_u32(buffer, &mut offset);
 
     let reserved_space_slice = buffer[offset..offset + 20].try_into().unwrap();
     offset += 20;
 
-    let version_valid_for = get_u32(buffer, &mut offset);
-    let sqlite_version = get_u32(buffer, &mut offset);
+    let version_valid_for = read_u32(buffer, &mut offset);
+    let sqlite_version = read_u32(buffer, &mut offset);
 
     // Construct the header struct
     Ok(DBHeader {
@@ -152,7 +209,40 @@ pub fn parse_file_header(buffer: &[u8]) -> Result<DBHeader, DBError> {
     })
 }
 
-pub fn parse_page_header(buffer: &[u8], offset: &mut usize) -> Result<PageHeader, DBError> {
+pub fn parse_page(
+    file: &mut File,
+    page: u64,
+    page_size: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: Look into this page as usize thing u64 as u32 could happen, which is not ideal
+    let mut page_buffer = vec![0u8; page_size as usize];
+    let mut offset = 0;
+
+    file.seek(std::io::SeekFrom::Start(page_size as u64 * (page - 1)))?;
+    file.read_exact(&mut page_buffer)?;
+
+    let page_header = parse_page_header(&page_buffer, &mut offset)?;
+    println!("Page {}\nPage Header: {:#?}", page, page_header);
+
+    let page_type = match page_header {
+        PageHeader::LeafPageHeader(l) => l.page_type,
+        PageHeader::InteriorPageHeader(i) => i.page_type,
+    };
+
+    for cell_offset in get_cell_pointers(&page_buffer, &mut offset, page_header) {
+        // TODO: Bruh this is really wrong you gotta look at the docs and see if this is really the
+        // way. Both rust and sqlite docs.
+        offset = cell_offset as usize;
+        parse_cell(&page_buffer, page_type, &mut offset)?;
+    }
+
+    Ok(())
+}
+
+pub fn parse_page_header(
+    buffer: &[u8],
+    offset: &mut usize,
+) -> Result<PageHeader, Box<dyn std::error::Error>> {
     let mut is_interior_page = false;
 
     let page_type = match buffer[*offset] {
@@ -167,21 +257,21 @@ pub fn parse_page_header(buffer: &[u8], offset: &mut usize) -> Result<PageHeader
         10 => PageType::IndexLeaf,
         13 => PageType::TableLeaf,
         n => {
-            return Err(DBError::InvalidPageHeader(format!(
+            return Err(Box::new(DBError::InvalidPageHeader(format!(
                 "Invalid Page Type: {}",
                 n
-            )))
+            ))))
         }
     };
     *offset += 1;
 
-    let first_freeblock = get_u16(&buffer, offset);
-    let cell_count = get_u16(&buffer, offset);
-    let cell_content_offset = get_u16(&buffer, offset);
-    let fragmented_bytes_count = get_u8(&buffer, offset);
+    let first_freeblock = read_u16(&buffer, offset);
+    let cell_count = read_u16(&buffer, offset);
+    let cell_content_offset = read_u16(&buffer, offset);
+    let fragmented_bytes_count = read_u8(&buffer, offset);
 
     if is_interior_page {
-        let right_most_pointer = get_u32(&buffer, offset);
+        let right_most_pointer = read_u32(&buffer, offset);
         return Ok(PageHeader::InteriorPageHeader(InteriorPageHeader {
             page_type,
             first_freeblock,
@@ -191,11 +281,6 @@ pub fn parse_page_header(buffer: &[u8], offset: &mut usize) -> Result<PageHeader
             right_most_pointer,
         }));
     }
-
-    // TODO: Implement Reading Cell Pointer Array Read Logic.
-
-    *offset = cell_content_offset as usize;
-    parse_cell(buffer, page_type, offset)?;
 
     Ok(PageHeader::LeafPageHeader(LeafPageHeader {
         page_type,
@@ -210,19 +295,36 @@ pub fn parse_cell(
     buffer: &[u8],
     page_type: PageType,
     offset: &mut usize,
-) -> Result<PageCell, DBError> {
+) -> Result<PageCell, Box<dyn std::error::Error>> {
     match page_type {
-        PageType::TableLeaf => return parse_table_leaf_cell(buffer, offset),
-        PageType::TableInterior => return parse_table_leaf_cell(buffer, offset),
-        PageType::IndexLeaf => return parse_table_leaf_cell(buffer, offset),
-        PageType::IndexInterior => return parse_table_leaf_cell(buffer, offset),
+        PageType::TableLeaf => {
+            println!("Table Leaf Cell");
+            return parse_table_leaf_cell(buffer, offset);
+        }
+        PageType::TableInterior => {
+            println!("Table Interior");
+            return parse_table_leaf_cell(buffer, offset);
+        }
+        PageType::IndexLeaf => {
+            println!("Index Leaf");
+            return parse_table_leaf_cell(buffer, offset);
+        }
+        PageType::IndexInterior => {
+            println!("Index Interior");
+            return parse_table_leaf_cell(buffer, offset);
+        }
     };
 }
 
-fn parse_table_leaf_cell(buffer: &[u8], offset: &mut usize) -> Result<PageCell, DBError> {
+// TODO: Return type.
+fn parse_table_leaf_cell(
+    buffer: &[u8],
+    offset: &mut usize,
+) -> Result<PageCell, Box<dyn std::error::Error>> {
     // TODO: Maybe something to not manually update the offset.
     let payload_size = get_varint(&buffer, offset);
     let row_id = get_varint(&buffer, offset);
+    println!("Payload: {}, Row Id {}", payload_size, row_id);
     read_payload(buffer, offset)?;
 
     Ok(PageCell::TableLeafCell(TableLeafCell {
@@ -238,7 +340,11 @@ fn parse_table_leaf_cell(buffer: &[u8], offset: &mut usize) -> Result<PageCell, 
 
 // fn parse_index_interior_cell(file: &mut file) -> Result<PageCell, Box<dyn std::error::Error>> {}
 
-fn read_payload(buffer: &[u8], offset: &mut usize) -> Result<(), DBError> {
+// TODO: Think of some dynamic struct creation for columns.
+// Also remove that page offset < 4096 thing. It's working now and I need to see if I can read the correct data
+// but this is not a solution but an ugly hack.
+// Add out of bounds check.
+fn read_payload(buffer: &[u8], offset: &mut usize) -> Result<(), Box<dyn std::error::Error>> {
     let header_start_offset = (*offset).clone();
     let header_size = get_varint(&buffer, offset);
 
@@ -254,17 +360,17 @@ fn read_payload(buffer: &[u8], offset: &mut usize) -> Result<(), DBError> {
                 println!("Null Value");
             }
             1 => {
-                let value = get_i8(buffer, offset);
+                let value = read_i8(buffer, offset);
             }
             2 => {
-                let value = get_i16(buffer, offset);
+                let value = read_i16(buffer, offset);
             }
             3 => {
                 // TODO: Handle i24 somehow.
                 // let value = get_i24(buffer, offset);
             }
             4 => {
-                let value = get_i32(buffer, offset);
+                let value = read_i32(buffer, offset);
                 println!("{}", value);
             }
             5 => {
@@ -272,10 +378,10 @@ fn read_payload(buffer: &[u8], offset: &mut usize) -> Result<(), DBError> {
                 // let value = get_i48(buffer, offset);
             }
             6 => {
-                let value = get_i64(buffer, offset);
+                let value = read_i64(buffer, offset);
             }
             7 => {
-                let value = get_f64(buffer, offset);
+                let value = read_f64(buffer, offset);
             }
             8 => {
                 let value = 0;
@@ -304,4 +410,53 @@ fn read_payload(buffer: &[u8], offset: &mut usize) -> Result<(), DBError> {
     }
 
     Ok(())
+}
+
+pub fn read_sqlite_schema_cell_payload(
+    buffer: &[u8],
+    offset: &mut usize,
+) -> Result<SQLiteSchema, Box<dyn std::error::Error>> {
+    let header_start_offset = (*offset).clone();
+    let header_size = get_varint(&buffer, offset);
+
+    let mut serial_types: Vec<u64> = Vec::new();
+    while *offset < (header_start_offset + header_size as usize) {
+        let serial_type = get_varint(&buffer, offset);
+        serial_types.push(serial_type);
+    }
+
+    let mut string_size = (serial_types[0] as usize - 13) / 2;
+    let schema_type = str::from_utf8(&buffer[*offset..*offset + string_size])?;
+    *offset += string_size;
+
+    string_size = (serial_types[1] as usize - 13) / 2;
+    let name = str::from_utf8(&buffer[*offset..*offset + string_size])?;
+    *offset += string_size;
+
+    string_size = (serial_types[2] as usize - 13) / 2;
+    let table_name = str::from_utf8(&buffer[*offset..*offset + string_size])?;
+    *offset += string_size;
+
+    let root_page = read_i8(buffer, offset);
+
+    string_size = (serial_types[4] as usize - 13) / 2;
+    let sql = str::from_utf8(&buffer[*offset..*offset + string_size])?;
+    *offset += string_size;
+    Ok(SQLiteSchema {
+        schema_type: schema_type.to_string(),
+        name: name.to_string(),
+        table_name: table_name.to_string(),
+        root_page,
+        sql: sql.to_lowercase(),
+    })
+}
+
+fn get_cell_pointers(buffer: &[u8], offset: &mut usize, page_header: PageHeader) -> Vec<u16> {
+    let cell_count = page_header.cell_count();
+    let mut cell_pointers = vec![0u16; cell_count as usize];
+    for i in 0..cell_count {
+        cell_pointers[i as usize] = read_u16(&buffer, offset);
+    }
+
+    cell_pointers
 }
