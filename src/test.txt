@@ -1,0 +1,118 @@
+DB Header: DBHeader {
+    header_string: [
+        83,
+        81,
+        76,
+        105,
+        116,
+        101,
+        32,
+        102,
+        111,
+        114,
+        109,
+        97,
+        116,
+        32,
+        51,
+        0,
+    ],
+    page_size: 4096,
+    write_version: 1,
+    read_version: 1,
+    reserved_space: 12,
+    max_payload_fraction: 64,
+    min_payload_fraction: 32,
+    min_leaf_fraction: 32,
+    change_counter: 3,
+    db_size_in_pages: 4,
+    freelist_trunk_page: 0,
+    freelist_pages: 0,
+    schema_cookie: 2,
+    schema_format: 4,
+    default_cache_page_size: 0,
+    vacuum: 0,
+    text_encoding: UTF8,
+    user_version: 0,
+    incremental_vacuum: 0,
+    application_id: 0,
+    reserved: [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ],
+    version_valid_for: 3,
+    version_number: 3043002,
+}
+Offset for reading Page Header: 100
+Trying page type for: 13
+Ok(
+    BTreePage {
+        header: BTreePageHeader {
+            page_type: TableLeafPage,
+            first_freeblock_offset: 0,
+            cell_count: 3,
+            cell_content_area: 3724,
+            number_of_fragmented_free_bytes: 0,
+            right_most_pointer: None,
+        },
+        cells: [
+            TableLeafCell(
+                TableLeafCell {
+                    row_id: 1,
+                    record: Record: {
+                     Text("table")
+                     Text("sand")
+                     Text("sand")
+                     Integer(2)
+                     Text("CREATE TABLE sand(id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+                    },
+                    first_overflow_page: None,
+                },
+            ),
+            TableLeafCell(
+                TableLeafCell {
+                    row_id: 2,
+                    record: Record: {
+                     Text("table")
+                     Text("SandWorm")
+                     Text("SandWorm")
+                     Integer(3)
+                     Text("CREATE TABLE SandWorm(\nid INTEGER PRIMARY KEY AUTOINCREMENT,\nsize_meters REAL NOT NULL,\nage_years INTEGER NOT NULL,\ndescription VARCHAR(1000),\nlast_sighted DATE\n)")
+                    },
+                    first_overflow_page: None,
+                },
+            ),
+            TableLeafCell(
+                TableLeafCell {
+                    row_id: 3,
+                    record: Record: {
+                     Text("table")
+                     Text("sqlite_sequence")
+                     Text("sqlite_sequence")
+                     Integer(4)
+                     Text("CREATE TABLE sqlite_sequence(name,seq)")
+                    },
+                    first_overflow_page: None,
+                },
+            ),
+        ],
+    },
+)
