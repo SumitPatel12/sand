@@ -12,6 +12,8 @@ use super::file_structures::{BTreePage, DBHeader};
 
 // TODO: Not sure where to put the page cache, for now keeping it both at Pager and the top level DB
 // struct.
+// The BTreePage shoub be wrapped in a Rc maybe? A from the user perspective the lib can be called
+// and shared as a service, in that case more than one objects may reference the cached page.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Pager {
