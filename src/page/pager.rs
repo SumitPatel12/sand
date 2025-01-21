@@ -19,19 +19,20 @@ use super::file_structures::{BTreePage, DBHeader};
 pub struct Pager {
     pub db_header: DBHeader,
     pub file: File,
-    pub page_cache: Arc<RwLock<HashMap<usize, BTreePage>>>,
+    pub page_cache: Arc<RwLock<HashMap<usize, Arc<BTreePage>>>>,
 }
 
 impl Pager {
     // Man, lifetimes are tough.
     // TODO: Look into why this is wrong. It's likely a lifetime issue. Maybe page cache stores a
-    // reference and not the page?
-    pub fn read_page(&mut self, page_index: usize) -> Result<&BTreePage> {
+    // reference and not the page? Since the page cache itself is Arc wrapped should the page
+    // reference be wrapped in Arc as well?
+    pub fn read_page(&mut self, page_index: usize) -> Result<Arc<BTreePage>> {
         println!("Pager: Trying to read page at index: {}", page_index);
-        let page_cache = self.page_cache.write().unwrap();
+        let mut page_cache = self.page_cache.write().unwrap();
         if let Some(page) = page_cache.get(&page_index) {
             println!("Got page {} from cache.", page_index);
-            return Ok(page);
+            return Ok(page.clone());
         }
 
         let page = file_structures::read_page(
@@ -39,7 +40,8 @@ impl Pager {
             self.db_header.page_size as usize,
             page_index,
         )?;
-
-        Ok(&page)
+        let arc_page = Arc::new(page);
+        page_cache.insert(page_index, arc_page.clone());
+        Ok(arc_page)
     }
 }

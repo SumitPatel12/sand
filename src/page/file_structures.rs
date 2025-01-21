@@ -1,6 +1,5 @@
 use crate::page::errors::DBError;
 use anyhow::{anyhow, Result};
-use core::fmt;
 use std::convert::TryFrom;
 use std::{
     fs::File,
@@ -219,8 +218,6 @@ pub fn read_page(file: &mut File, page_size: usize, page_index: usize) -> Result
         cells.push(cell);
     }
 
-    // I asked around and turns out if you know its gonna be static is better to directly use the
-    // exact positions rather than incrementing offsets.
     Ok(BTreePage {
         // TODO: Get rid of dummy values
         header,
@@ -228,7 +225,7 @@ pub fn read_page(file: &mut File, page_size: usize, page_index: usize) -> Result
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BTreeCell {
     TableInteriorCell(TableInteriorCell),
     TableLeafCell(TableLeafCell),
@@ -236,7 +233,7 @@ pub enum BTreeCell {
     IndexLeafCell(IndexLeafCell),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TableInteriorCell {
     pub left_child_page: u32,
     pub rowid: u64,
@@ -245,24 +242,24 @@ pub struct TableInteriorCell {
 // TODO: Probably should not directly use the parsed record in here.
 // Maybe use the raw bytes as a vector and parse it as required? Anyway do more reasearch on how
 // SQLite does this.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TableLeafCell {
     pub row_id: u64,
-    pub record: Record,
+    pub payload: Vec<Value>,
     pub first_overflow_page: Option<u32>,
 }
 
 // TODO: Probably should not directly use the parsed record in here.
 // Maybe use the raw bytes as a vector and parse it as required? Anyway do more reasearch on how
 // SQLite does this.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexInteriorCell {
     pub left_child_page: u32,
-    pub record: Record,
+    pub payload: Vec<Value>,
     pub first_overflow_page: Option<u32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexLeafCell {
     pub payload: Vec<u8>,
     pub first_overflow_page: Option<u32>,
@@ -287,6 +284,7 @@ impl TryFrom<u8> for PageType {
 }
 
 fn read_cell(page: &[u8], page_type: &PageType, offset: usize) -> Result<BTreeCell> {
+    // TODO: Still have to do overflow cell data.
     match page_type {
         PageType::IndexInteriorPage => todo!(),
         PageType::TableInteriorPage => todo!(),
@@ -302,36 +300,20 @@ fn read_cell(page: &[u8], page_type: &PageType, offset: usize) -> Result<BTreeCe
             let payload = &page[offset..offset + payload_size as usize];
             Ok(BTreeCell::TableLeafCell(TableLeafCell {
                 row_id,
-                record: read_record(&payload)?,
+                payload: read_payload(&payload)?,
                 first_overflow_page: None,
             }))
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Null,
     Integer(i64),
     Float(f64),
     Text(String),
     Blob(Vec<u8>),
-}
-
-#[allow(dead_code)]
-pub struct Record {
-    values: Vec<Value>,
-}
-
-impl fmt::Debug for Record {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Record: {{")?;
-
-        for value in &self.values {
-            writeln!(f, " {:?}", value)?;
-        }
-        write!(f, "}}")
-    }
 }
 
 #[derive(Debug)]
@@ -373,7 +355,7 @@ impl TryFrom<u64> for SerialType {
     }
 }
 
-fn read_record(payload: &[u8]) -> Result<Record> {
+fn read_payload(payload: &[u8]) -> Result<Vec<Value>> {
     let mut offset = 0;
     let (header_size, varint_size) = read_varint(&payload[offset..])?;
     offset += varint_size;
@@ -398,7 +380,7 @@ fn read_record(payload: &[u8]) -> Result<Record> {
         values.push(value);
     }
 
-    Ok(Record { values })
+    Ok(values)
 }
 
 fn read_value(buffer: &[u8], serial_type: SerialType) -> Result<(Value, usize)> {

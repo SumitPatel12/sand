@@ -1,48 +1,32 @@
+use anyhow::Result;
+use file_structures::DBHeader;
+use pager::Pager;
 use std::{
     collections::HashMap,
     fs::File,
     sync::{Arc, RwLock},
 };
 
-use anyhow::Result;
-use file_structures::{BTreePage, DBHeader};
-use pager::Pager;
-
 pub mod errors;
 pub mod file_structures;
 pub mod pager;
 
-// TODO: Maybe move this to the impl of tables or databases?
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct SQLiteSchema {
-    schema_type: String,
-    name: String,
-    table_name: String,
-    root_page: i8,
-    sql: String,
-}
-
-// I'm thinking the Rc is necessary cause we'll get one instance of the DB and multiple calls on
-// it. We'd want the Pager, Header, and Tables to be shared. page_cache should be shared across all
-// of the instances?
 // TODO: Check how to implement concurreny. Maybe the page cache and header and pager show be
 // sharable across instances? The cache should be at least.
-// TODO: Not sure where to put the page cache, for now keeping it both at Pager and the top level DB
-// struct.
 // Implementing Arc<RwLock<HashMap<uszie, BTreePage>>> for now. Seems like the right thing but
 // still need to look moer into this.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Database {
-    pager: Pager,
+    pub pager: Pager,
+    // Should this be shared like Rc or Arc?
     header: DBHeader,
+    // This I think should definitely be shared. Will look into this.
     tables: HashMap<String, Table>,
-    page_cache: Arc<RwLock<HashMap<usize, BTreePage>>>,
 }
 
 impl Database {
-    fn open(file_path: String) -> Result<Database> {
+    pub fn open(file_path: String) -> Result<Database> {
         let mut file = File::open(file_path)?;
         let page_cache = Arc::new(RwLock::new(HashMap::new()));
         let header = file_structures::read_db_header(&mut file)?;
@@ -59,7 +43,6 @@ impl Database {
 
         Ok(Database {
             pager,
-            page_cache,
             tables,
             header,
         })
